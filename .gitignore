@@ -1,0 +1,36 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Data (large files — kept local, not committed)
+data/DCA1/images/
+data/DCA1/masks/
+data/DCA1/skeletons/
+
+# Results (generated files — optionally gitignored)
+results/checkpoints/
+results/runs/
+results/figures/
+results/tables/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+venv/
+env/
+

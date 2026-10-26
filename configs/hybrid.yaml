@@ -1,0 +1,60 @@
+# ============================================================
+# Experiment: M2 — Hybrid CNN-Mamba U-Net (no innovation)
+# ============================================================
+experiment_name: hybrid_unet
+model: hybrid_unet
+seed: 42
+
+# Data
+data_root: data/DCA1
+split_file: splits/split.json
+input_size: 320
+num_workers: 4
+
+# Training
+epochs: 100
+batch_size: 4
+
+# Optimizer
+optimizer: adamw
+lr: 1.0e-4
+weight_decay: 1.0e-4
+
+# Scheduler
+scheduler: cosine
+
+# Loss
+loss: bce_dice
+pos_weight: auto
+bce_weight: 1.0
+dice_weight: 1.0
+
+# Gradient clipping
+grad_clip: 1.0
+
+# Early stopping
+early_stop_metric: val_dice
+early_stop_patience: 20
+
+# Threshold
+threshold: 0.5
+
+# Augmentation
+augmentation: true
+
+# Post-processing
+min_component_size: 50
+apply_closing: false
+
+# Innovation flags
+use_innovation_i2: false   # Set true in hybrid_i2.yaml
+
+# Hybrid architecture settings
+cnn_stages: 2              # first 2 stages use CNN blocks
+vss_stages: 2              # deeper 2 stages use VSS blocks
+channels: [32, 64, 128, 256, 512]
+
+# Logging / output
+log_dir: results/runs/hybrid_unet
+checkpoint_dir: results/checkpoints/hybrid_unet
+save_predictions: true

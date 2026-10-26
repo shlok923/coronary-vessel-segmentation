@@ -1,0 +1,55 @@
+# ============================================================
+# Experiment: M1 — Baseline U-Net
+# ============================================================
+experiment_name: baseline_unet
+model: unet
+seed: 42
+
+# Data
+data_root: data/DCA1
+split_file: splits/split.json
+input_size: 320          # reflect-pad 300→320
+num_workers: 4
+
+# Training
+epochs: 100
+batch_size: 4
+
+# Optimizer
+optimizer: adamw
+lr: 1.0e-4
+weight_decay: 1.0e-4
+
+# Scheduler
+scheduler: cosine        # cosine annealing over all epochs
+
+# Loss
+loss: bce_dice
+pos_weight: auto         # computed from training masks
+bce_weight: 1.0
+dice_weight: 1.0
+
+# Gradient clipping
+grad_clip: 1.0
+
+# Early stopping / checkpoint selection
+early_stop_metric: val_dice
+early_stop_patience: 20
+
+# Threshold (chosen on val, frozen for test)
+threshold: 0.5
+
+# Augmentation
+augmentation: true
+
+# Post-processing (N chosen on val)
+min_component_size: 50
+apply_closing: false
+
+# Innovation flags (not used in baseline)
+use_innovation_i2: false
+
+# Logging / output
+log_dir: results/runs/baseline_unet
+checkpoint_dir: results/checkpoints/baseline_unet
+save_predictions: true

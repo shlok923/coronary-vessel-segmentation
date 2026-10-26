@@ -1,0 +1,35 @@
+# Core ML
+torch>=2.1.0
+torchvision>=0.16.0
+numpy>=1.24.0
+scipy>=1.11.0
+scikit-image>=0.21.0
+scikit-learn>=1.3.0
+Pillow>=10.0.0
+
+# Augmentation
+albumentations>=1.3.1
+
+# Visualization & reporting
+matplotlib>=3.7.0
+pandas>=2.0.0
+tensorboard>=2.14.0
+
+# FLOPs counting (try fvcore first, thop as fallback)
+fvcore>=0.1.5
+
+# Stats
+statsmodels>=0.14.0
+
+# Config
+pyyaml>=6.0
+
+# Progress bars
+tqdm>=4.65.0
+
+# Optional: Mamba SSM (requires CUDA + compatible GPU)
+# Install separately with:
+#   pip install causal-conv1d==1.2.0
+#   pip install mamba-ssm==1.2.0
+# If installation fails, the pure-PyTorch fallback is used automatically.
+
