@@ -12,6 +12,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+from skimage.morphology import skeletonize
 
 
 def load_split(split_file):
@@ -113,14 +114,12 @@ class DCA1Dataset(Dataset):
         }
 
         if self.use_skeleton:
-            skel_path = os.path.join(self.data_root, 'skeletons', f'{image_id}_skel.pgm')
-            if os.path.exists(skel_path):
-                skel = self._load_pgm(skel_path)
-                skel = (skel > 0).astype(np.float32)
-                skel_padded, _ = reflect_pad(skel, self.target_size)
-                item['skeleton'] = torch.from_numpy(skel_padded).unsqueeze(0)
-            else:
-                item['skeleton'] = torch.zeros_like(mask_t)
+            # Generate centerline skeleton dynamically on-the-fly from the (augmented) mask.
+            # This ensures skeleton labels perfectly align with augmented vessel geometry
+            # without requiring any precomputed skeleton files on disk.
+            skel = skeletonize(mask > 0).astype(np.float32)
+            skel_padded, _ = reflect_pad(skel, self.target_size)
+            item['skeleton'] = torch.from_numpy(skel_padded).unsqueeze(0)
 
         return item
 

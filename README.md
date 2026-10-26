@@ -68,11 +68,6 @@ python -m src.sanity_check
 pytest tests/ -v
 ```
 
-### Precompute skeleton GT (for I2 innovation)
-```bash
-python -m src.precompute_skeletons
-```
-
 ### Train models
 ```bash
 python -m src.train --config configs/baseline.yaml     # M1
@@ -105,7 +100,7 @@ All outputs go to `results/`.
 ```
 coronary-vessel-segmentation/
   configs/           YAML config per experiment
-  data/DCA1/         images/, masks/, skeletons/ (user-provided)
+  data/DCA1/         images/, masks/ (user-provided)
   splits/split.json  Fixed 80/24/30 train/val/test split
   src/
     datasets.py      Dataset, augmentation, DataLoader
@@ -136,7 +131,7 @@ coronary-vessel-segmentation/
 The proposed model (M2+I2) adds:
 1. **Auxiliary centerline head** — predicts vessel skeleton from decoder features
 2. **clDice loss** — topology-aware loss rewarding connected vessel predictions
-3. **Skeleton BCE** — supervises the auxiliary head with precomputed GT skeletons
+3. **Skeleton BCE** — supervises the auxiliary head with GT skeletons extracted dynamically from the masks
 
 Toggle with `use_innovation_i2: true/false` in any config YAML.
 
