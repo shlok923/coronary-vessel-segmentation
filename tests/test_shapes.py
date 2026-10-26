@@ -119,3 +119,4 @@ class TestHybridUNetShapes:
         with torch.no_grad():
             out = model(x)
         assert out.shape == (1, 1, 64, 64)
+
