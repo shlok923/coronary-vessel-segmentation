@@ -20,6 +20,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 
 def get_autocast(device):
@@ -93,12 +94,14 @@ def get_scheduler(optimizer, config, steps_per_epoch=None):
         raise ValueError(f"Unknown scheduler: {sched}")
 
 
-def train_one_epoch(model, loader, criterion, optimizer, scaler, device, config):
+def train_one_epoch(model, loader, criterion, optimizer, scaler, device, config, epoch=None, epochs=None):
     model.train()
     total_loss = 0.0
     use_i2 = config.get('use_innovation_i2', False)
 
-    for batch in loader:
+    desc = f"Epoch {epoch:3d}/{epochs} [Train]" if epoch else "Train"
+    pbar = tqdm(loader, desc=desc, leave=False)
+    for batch in pbar:
         images = batch['image'].to(device)
         masks  = batch['mask'].to(device)
         skels  = batch.get('skeleton', None)
@@ -122,18 +125,21 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, config)
         scaler.step(optimizer)
         scaler.update()
         total_loss += loss.item()
+        pbar.set_postfix({'loss': f"{loss.item():.4f}"})
 
     return total_loss / len(loader)
 
 
 @torch.no_grad()
-def validate(model, loader, criterion, device, config, threshold=0.5):
+def validate(model, loader, criterion, device, config, threshold=0.5, epoch=None, epochs=None):
     model.eval()
     total_loss = 0.0
     per_image_results = []
     use_i2 = config.get('use_innovation_i2', False)
 
-    for batch in loader:
+    desc = f"Epoch {epoch:3d}/{epochs} [Val]" if epoch else "Val"
+    pbar = tqdm(loader, desc=desc, leave=False)
+    for batch in pbar:
         images    = batch['image'].to(device)
         masks     = batch['mask'].to(device)
         pad_params = batch['pad_params']
@@ -237,9 +243,11 @@ def train(config, config_path):
     for epoch in range(1, epochs + 1):
         t0 = time.time()
         train_loss = train_one_epoch(model, train_loader, criterion,
-                                      optimizer, scaler, device, config)
+                                      optimizer, scaler, device, config,
+                                      epoch=epoch, epochs=epochs)
         val_loss, val_agg = validate(model, val_loader, criterion,
-                                      device, config, threshold=threshold)
+                                      device, config, threshold=threshold,
+                                      epoch=epoch, epochs=epochs)
 
         val_dice   = val_agg.get('dice', {}).get('mean', 0.0)
         val_cldice = val_agg.get('cldice', {}).get('mean', 0.0)
