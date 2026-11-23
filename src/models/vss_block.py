@@ -163,8 +163,8 @@ class SS2D(nn.Module):
             xz, [self.dt_rank, self.d_state, self.d_state], dim=-1
         )
         dt = self.dt_projs[direction_idx](dt)      # (B,L, d_inner)
-        A  = -torch.exp(self.A_logs[direction_idx].float())  # (d_inner, d_state)
-        D  = self.Ds[direction_idx].float()
+        A  = -torch.exp(self.A_logs[direction_idx].float()).to(x_flat.dtype)  # (d_inner, d_state)
+        D  = self.Ds[direction_idx].to(x_flat.dtype)
 
         if _MAMBA_AVAILABLE:
             # Use fast CUDA kernel
@@ -202,7 +202,7 @@ class SS2D(nn.Module):
         x_conv = self.act(self.conv2d(x_conv))
         x_conv = x_conv.permute(0,2,3,1)              # (B, H, W, d_inner)
 
-        # 4-direction scans
+        # 4-direction scans with gradient checkpointing during training to prevent VRAM accumulation
         L = H * W
         # Direction 1: row-major
         x1 = x_conv.reshape(B, L, self.d_inner)
@@ -213,10 +213,17 @@ class SS2D(nn.Module):
         # Direction 4: reverse column-major
         x4 = x3.flip(1)
 
-        y1 = self._scan_direction(x1, 0)
-        y2 = self._scan_direction(x2, 1).flip(1)
-        y3 = self._scan_direction(x3, 2).reshape(B, W, H, self.d_inner).permute(0,2,1,3).reshape(B, L, self.d_inner)
-        y4 = self._scan_direction(x4, 3).flip(1).reshape(B, W, H, self.d_inner).permute(0,2,1,3).reshape(B, L, self.d_inner)
+        if self.training and torch.is_grad_enabled():
+            from torch.utils.checkpoint import checkpoint
+            y1 = checkpoint(self._scan_direction, x1, 0, use_reentrant=False)
+            y2 = checkpoint(self._scan_direction, x2, 1, use_reentrant=False).flip(1)
+            y3 = checkpoint(self._scan_direction, x3, 2, use_reentrant=False).reshape(B, W, H, self.d_inner).permute(0,2,1,3).reshape(B, L, self.d_inner)
+            y4 = checkpoint(self._scan_direction, x4, 3, use_reentrant=False).flip(1).reshape(B, W, H, self.d_inner).permute(0,2,1,3).reshape(B, L, self.d_inner)
+        else:
+            y1 = self._scan_direction(x1, 0)
+            y2 = self._scan_direction(x2, 1).flip(1)
+            y3 = self._scan_direction(x3, 2).reshape(B, W, H, self.d_inner).permute(0,2,1,3).reshape(B, L, self.d_inner)
+            y4 = self._scan_direction(x4, 3).flip(1).reshape(B, W, H, self.d_inner).permute(0,2,1,3).reshape(B, L, self.d_inner)
 
         # Merge
         y = y1 + y2 + y3 + y4

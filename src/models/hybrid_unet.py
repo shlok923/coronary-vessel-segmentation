@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.models.unet import DoubleConv, Up
+from src.models.unet import DoubleConv, Down, Up
 from src.models.vss_block import VSSBlock, log_backend
 
 
@@ -109,15 +109,23 @@ class HybridUNet(nn.Module):
 
         # Stage 2: CNN or VSS
         if cnn_stages >= 2:
-            self.enc2 = nn.Sequential(nn.MaxPool2d(2), DoubleConv(c[0], c[1]))
+            self.enc2 = Down(c[0], c[1])
         else:
             self.enc2 = VSSDown(c[0], c[1], d_state=d_state)
 
-        # Stage 3: VSS (long-range vessel context)
-        self.enc3 = VSSDown(c[1], c[2], d_state=d_state)
+        # Stage 3: CNN or VSS
+        if cnn_stages >= 3:
+            self.enc3 = Down(c[1], c[2])
+        else:
+            self.enc3 = VSSDown(c[1], c[2], d_state=d_state)
 
-        # Stage 4 + Bottleneck: VSS
-        self.enc4       = VSSDown(c[2], c[3], d_state=d_state)
+        # Stage 4: CNN or VSS
+        if cnn_stages >= 4:
+            self.enc4 = Down(c[2], c[3])
+        else:
+            self.enc4 = VSSDown(c[2], c[3], d_state=d_state)
+
+        # Bottleneck: VSS
         self.bottleneck = VSSDown(c[3], c[4], d_state=d_state)
 
         # ---- Decoder ----

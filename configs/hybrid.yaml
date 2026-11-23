@@ -13,7 +13,7 @@ num_workers: 2
 
 # Training
 epochs: 100
-batch_size: 4
+batch_size: 2
 
 # Optimizer
 optimizer: adamw
@@ -50,8 +50,8 @@ apply_closing: false
 use_innovation_i2: false   # Set true in hybrid_i2.yaml
 
 # Hybrid architecture settings
-cnn_stages: 2              # first 2 stages use CNN blocks
-vss_stages: 2              # deeper 2 stages use VSS blocks
+cnn_stages: 3              # first 3 stages use CNN blocks (320, 160, 80)
+vss_stages: 2              # deeper stages use VSS blocks (40, 20)
 channels: [32, 64, 128, 256, 512]
 
 # Logging / output

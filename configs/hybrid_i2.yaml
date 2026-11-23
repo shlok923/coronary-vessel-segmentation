@@ -13,7 +13,7 @@ num_workers: 2
 
 # Training
 epochs: 100
-batch_size: 4
+batch_size: 2
 
 # Optimizer
 optimizer: adamw
@@ -52,7 +52,7 @@ apply_closing: false
 use_innovation_i2: true
 
 # Hybrid architecture settings
-cnn_stages: 2
+cnn_stages: 3
 vss_stages: 2
 channels: [32, 64, 128, 256, 512]
 
