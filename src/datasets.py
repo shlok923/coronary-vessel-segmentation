@@ -143,11 +143,16 @@ def get_dataloader(data_root, split_file, split='train', batch_size=4,
     ids = split_data[split]
     training = (split == 'train')
     dataset = DCA1Dataset(data_root, ids, training=training, use_skeleton=use_skeleton)
+
+    # Clamp num_workers so it doesn't exceed available CPU cores (avoids Colab DataLoader warning & thread thrashing)
+    max_workers = os.cpu_count() or 2
+    actual_workers = min(num_workers, max_workers)
+
     loader  = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=training,
-        num_workers=num_workers,
+        num_workers=actual_workers,
         pin_memory=True,
         drop_last=training,
     )

@@ -19,8 +19,28 @@ import os, sys, json, yaml, argparse, time, random, shutil
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter
+
+
+def get_autocast(device):
+    """Modern torch.amp.autocast context manager with legacy fallback."""
+    if hasattr(torch, 'amp') and hasattr(torch.amp, 'autocast'):
+        device_type = 'cuda' if device.type == 'cuda' else 'cpu'
+        return torch.amp.autocast(device_type=device_type, enabled=(device.type == 'cuda'))
+    else:
+        from torch.cuda.amp import autocast
+        return autocast(enabled=(device.type == 'cuda'))
+
+
+def get_grad_scaler(device):
+    """Modern torch.amp.GradScaler with legacy fallback."""
+    if hasattr(torch, 'amp') and hasattr(torch.amp, 'GradScaler'):
+        try:
+            return torch.amp.GradScaler('cuda', enabled=(device.type == 'cuda'))
+        except (TypeError, Exception):
+            pass
+    from torch.cuda.amp import GradScaler
+    return GradScaler(enabled=(device.type == 'cuda'))
 
 from src.datasets import get_dataloader, compute_pos_weight, load_split
 from src.losses import build_loss
@@ -86,7 +106,7 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, config)
             skels = skels.to(device)
 
         optimizer.zero_grad()
-        with autocast(enabled=(device.type == 'cuda')):
+        with get_autocast(device):
             if use_i2:
                 logits, skel_logits = model(images)
                 loss = criterion(logits, masks,
@@ -121,7 +141,7 @@ def validate(model, loader, criterion, device, config, threshold=0.5):
         if skels is not None:
             skels = skels.to(device)
 
-        with autocast(enabled=(device.type == 'cuda')):
+        with get_autocast(device):
             if use_i2:
                 logits, skel_logits = model(images)
                 loss = criterion(logits, masks,
@@ -198,7 +218,7 @@ def train(config, config_path):
     criterion = build_loss(config, pos_weight=pos_weight)
     optimizer  = get_optimizer(model, config)
     scheduler  = get_scheduler(optimizer, config)
-    scaler     = GradScaler(enabled=(device.type == 'cuda'))
+    scaler     = get_grad_scaler(device)
 
     # Logging
     writer = SummaryWriter(log_dir=run_dir)

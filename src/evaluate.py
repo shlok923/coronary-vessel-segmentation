@@ -17,8 +17,17 @@ import os, sys, json, yaml, argparse
 import numpy as np
 import pandas as pd
 import torch
-from torch.cuda.amp import autocast
 from scipy.stats import wilcoxon
+
+
+def get_autocast(device):
+    """Modern torch.amp.autocast context manager with legacy fallback."""
+    if hasattr(torch, 'amp') and hasattr(torch.amp, 'autocast'):
+        device_type = 'cuda' if device.type == 'cuda' else 'cpu'
+        return torch.amp.autocast(device_type=device_type, enabled=(device.type == 'cuda'))
+    else:
+        from torch.cuda.amp import autocast
+        return autocast(enabled=(device.type == 'cuda'))
 
 from src.datasets import get_dataloader, load_split
 from src.metrics import per_image_metrics, aggregate_metrics
@@ -65,7 +74,7 @@ def evaluate_model(model, loader, device, config):
         pad_params = batch['pad_params']
         ids        = batch['image_id']
 
-        with autocast(enabled=(device.type == 'cuda')):
+        with get_autocast(device):
             if use_i2:
                 logits, _ = model(images)
             else:

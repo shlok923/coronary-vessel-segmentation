@@ -57,7 +57,7 @@ def selective_scan_pytorch(u, delta, A, B, C, D, delta_bias=None, delta_softplus
     Returns:
         y: (B, L, D) output
     """
-    B_batch, L, D = u.shape
+    B_batch, L, d_inner = u.shape
     N = A.shape[1]
 
     if delta_bias is not None:
@@ -66,18 +66,19 @@ def selective_scan_pytorch(u, delta, A, B, C, D, delta_bias=None, delta_softplus
         delta = F.softplus(delta)
 
     # Discretize: A_bar = exp(delta * A), B_bar = delta * B
-    delta_A = torch.exp(delta.unsqueeze(-1) * A.unsqueeze(0).unsqueeze(0))  # (B,L,D,N)
-    delta_B_u = delta.unsqueeze(-1) * B.unsqueeze(2) * u.unsqueeze(-1)      # (B,L,D,N)
+    delta_A = torch.exp(delta.unsqueeze(-1) * A.unsqueeze(0).unsqueeze(0))  # (B,L,d_inner,N)
+    delta_B_u = delta.unsqueeze(-1) * B.unsqueeze(2) * u.unsqueeze(-1)      # (B,L,d_inner,N)
 
     # Scan
-    x = torch.zeros(B_batch, D, N, device=u.device, dtype=u.dtype)
+    x = torch.zeros(B_batch, d_inner, N, device=u.device, dtype=u.dtype)
     ys = []
     for i in range(L):
-        x = delta_A[:, i] * x + delta_B_u[:, i]   # (B,D,N)
-        y = (x * C[:, i].unsqueeze(1)).sum(-1)      # (B,D)
+        x = delta_A[:, i] * x + delta_B_u[:, i]   # (B,d_inner,N)
+        y = (x * C[:, i].unsqueeze(1)).sum(-1)      # (B,d_inner)
         ys.append(y)
-    y = torch.stack(ys, dim=1)                       # (B,L,D)
-    y = y + u * D.unsqueeze(0).unsqueeze(0)
+    y = torch.stack(ys, dim=1)                       # (B,L,d_inner)
+    if D is not None:
+        y = y + u * D.unsqueeze(0).unsqueeze(0)
     return y
 
 
@@ -151,7 +152,7 @@ class SS2D(nn.Module):
 
     def _scan_direction(self, x_flat, direction_idx):
         """Run selective scan for one direction."""
-        B, L, D = x_flat.shape
+        B, L, _ = x_flat.shape
         xz = self.x_proj[direction_idx](x_flat)  # (B,L, dt_rank + 2*d_state)
         dt, B_ssm, C_ssm = torch.split(
             xz, [self.dt_rank, self.d_state, self.d_state], dim=-1
