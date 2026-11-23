@@ -178,7 +178,7 @@ def validate(model, loader, criterion, device, config, threshold=0.5, epoch=None
     return val_loss, agg
 
 
-def train(config, config_path):
+def train(config, config_path, resume=False):
     # Setup
     seed = config.get('seed', 42)
     set_seed(seed)
@@ -229,10 +229,17 @@ def train(config, config_path):
     # Logging
     writer = SummaryWriter(log_dir=run_dir)
     csv_path = os.path.join(run_dir, 'metrics.csv')
-    with open(csv_path, 'w') as f:
-        f.write('epoch,train_loss,val_loss,val_dice,val_cldice,lr\n')
+    if not resume or not os.path.exists(csv_path):
+        with open(csv_path, 'w') as f:
+            f.write('epoch,train_loss,val_loss,val_dice,val_cldice,lr\n')
+
+    # Checkpoint paths & automatic Google Drive mirroring
+    best_ckpt_path = os.path.join(ckpt_dir, 'best.pth')
+    drive_backup_dir = os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', ckpt_dir)
+    drive_ckpt_path = os.path.join(drive_backup_dir, 'best.pth')
 
     # Training loop
+    start_epoch = 1
     best_metric = -1.0
     patience_counter = 0
     early_stop_metric = config.get('early_stop_metric', 'val_dice')
@@ -240,7 +247,28 @@ def train(config, config_path):
     threshold = config.get('threshold', 0.5)
     epochs = config.get('epochs', 100)
 
-    for epoch in range(1, epochs + 1):
+    # Resume from checkpoint if requested
+    if resume:
+        target_ckpt = None
+        if os.path.exists(best_ckpt_path):
+            target_ckpt = best_ckpt_path
+        elif os.path.exists(drive_ckpt_path):
+            target_ckpt = drive_ckpt_path
+
+        if target_ckpt:
+            print(f"[Train] Resuming from checkpoint: {target_ckpt}")
+            ckpt = torch.load(target_ckpt, map_location=device)
+            model.load_state_dict(ckpt['model_state_dict'])
+            if 'optimizer_state_dict' in ckpt:
+                optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+            start_epoch = ckpt.get('epoch', 0) + 1
+            best_metric = ckpt.get('best_metric', -1.0)
+            print(f"[Train] Resumed at epoch {start_epoch} (previous best {early_stop_metric}={best_metric:.4f})")
+            for _ in range(1, start_epoch):
+                if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step()
+
+    for epoch in range(start_epoch, epochs + 1):
         t0 = time.time()
         train_loss = train_one_epoch(model, train_loader, criterion,
                                       optimizer, scaler, device, config,
@@ -281,14 +309,23 @@ def train(config, config_path):
         if metric_val > best_metric:
             best_metric = metric_val
             patience_counter = 0
-            torch.save({
+            ckpt_data = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'best_metric': best_metric,
                 'config': config,
-            }, os.path.join(ckpt_dir, 'best.pth'))
+            }
+            torch.save(ckpt_data, best_ckpt_path)
             print(f"  → Best checkpoint saved (val_{early_stop_metric}={best_metric:.4f})")
+
+            # Instant Google Drive mirror if Drive is mounted
+            if os.path.exists('/content/drive/MyDrive'):
+                try:
+                    os.makedirs(drive_backup_dir, exist_ok=True)
+                    torch.save(ckpt_data, drive_ckpt_path)
+                except Exception:
+                    pass
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -311,9 +348,10 @@ def train(config, config_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True, help='Path to YAML config')
+    parser.add_argument('--resume', action='store_true', help='Resume from checkpoint if available')
     args = parser.parse_args()
     config = load_config(args.config)
-    train(config, args.config)
+    train(config, args.config, resume=args.resume)
 
 
 if __name__ == '__main__':
