@@ -44,18 +44,19 @@ except ImportError:
 # ---------------------------------------------------------------------------
 def selective_scan_pytorch(u, delta, A, B, C, D, delta_bias=None, delta_softplus=True):
     """
-    Pure-PyTorch implementation of selective scan (S4/Mamba recurrence).
+    Pure-PyTorch parallel selective scan (Hillis-Steele associative scan).
+    Computes S4/Mamba linear recurrence in O(log L) steps instead of O(L) sequential steps.
     
     Args:
-        u:     (B, L, D) input
-        delta: (B, L, D) dt
-        A:     (D, N) state matrix (log-space)
+        u:     (B, L, d_inner) input
+        delta: (B, L, d_inner) dt
+        A:     (d_inner, N) state matrix (log-space)
         B:     (B, L, N) input projection
         C:     (B, L, N) output projection
-        D:     (D,) skip connection
+        D:     (d_inner,) skip connection
         
     Returns:
-        y: (B, L, D) output
+        y: (B, L, d_inner) output
     """
     B_batch, L, d_inner = u.shape
     N = A.shape[1]
@@ -69,14 +70,18 @@ def selective_scan_pytorch(u, delta, A, B, C, D, delta_bias=None, delta_softplus
     delta_A = torch.exp(delta.unsqueeze(-1) * A.unsqueeze(0).unsqueeze(0))  # (B,L,d_inner,N)
     delta_B_u = delta.unsqueeze(-1) * B.unsqueeze(2) * u.unsqueeze(-1)      # (B,L,d_inner,N)
 
-    # Scan
-    x = torch.zeros(B_batch, d_inner, N, device=u.device, dtype=u.dtype)
-    ys = []
-    for i in range(L):
-        x = delta_A[:, i] * x + delta_B_u[:, i]   # (B,d_inner,N)
-        y = (x * C[:, i].unsqueeze(1)).sum(-1)      # (B,d_inner)
-        ys.append(y)
-    y = torch.stack(ys, dim=1)                       # (B,L,d_inner)
+    # Parallel associative scan: h_t = delta_A_t * h_{t-1} + delta_B_u_t
+    # O(log2 L) iterations (e.g. 13 steps for L=6400) instead of 6400 sequential steps.
+    step = 1
+    A_scan = delta_A
+    B_scan = delta_B_u
+    while step < L:
+        B_scan = torch.cat([B_scan[:, :step], B_scan[:, step:] + A_scan[:, step:] * B_scan[:, :-step]], dim=1)
+        A_scan = torch.cat([A_scan[:, :step], A_scan[:, step:] * A_scan[:, :-step]], dim=1)
+        step *= 2
+
+    # Output projection: y_t = sum_n (h_t * C_t)
+    y = (B_scan * C.unsqueeze(2)).sum(-1)  # (B, L, d_inner)
     if D is not None:
         y = y + u * D.unsqueeze(0).unsqueeze(0)
     return y
@@ -279,5 +284,5 @@ def log_backend():
         logger.info("SS2D backend: mamba-ssm CUDA kernels")
         print("[VSS] Using mamba-ssm CUDA backend (fast)")
     else:
-        logger.info("SS2D backend: pure-PyTorch fallback")
-        print("[VSS] Using pure-PyTorch SS2D fallback (slower, but functional)")
+        logger.info("SS2D backend: pure-PyTorch parallel associative scan")
+        print("[VSS] Using pure-PyTorch parallel SS2D (log-scan accelerated)")
