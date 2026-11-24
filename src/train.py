@@ -249,11 +249,8 @@ def train(config, config_path, resume=False):
 
     # Resume from checkpoint if requested
     if resume:
-        target_ckpt = None
-        if os.path.exists(best_ckpt_path):
-            target_ckpt = best_ckpt_path
-        elif os.path.exists(drive_ckpt_path):
-            target_ckpt = drive_ckpt_path
+        from src.evaluate import find_checkpoint
+        target_ckpt = find_checkpoint(config)
 
         if target_ckpt:
             print(f"[Train] Resuming from checkpoint: {target_ckpt}")

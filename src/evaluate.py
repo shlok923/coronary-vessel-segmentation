@@ -13,7 +13,7 @@ Outputs:
     results/tables/ablation_table.csv
     Paired Wilcoxon test results (M1 vs M2+I2)
 """
-import os, sys, json, yaml, argparse
+import os, sys, json, yaml, argparse, glob, re
 import numpy as np
 import pandas as pd
 import torch
@@ -43,6 +43,7 @@ def load_config(path):
 def find_checkpoint(config_or_dir):
     """
     Search for checkpoint file across local workspace, Google Drive, and fallback paths.
+    Supports renamed checkpoints such as 'best_7292.pth', 'best_0.842.pth', or 'best_<dice>.pth'.
     Returns the resolved path if found, or None.
     """
     if isinstance(config_or_dir, dict):
@@ -50,18 +51,53 @@ def find_checkpoint(config_or_dir):
     else:
         ckpt_dir = str(config_or_dir)
 
-    candidates = [
-        os.path.join(ckpt_dir, 'best.pth'),
-        os.path.join(ckpt_dir, 'last.pth'),
-        os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', ckpt_dir, 'best.pth'),
-        os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', ckpt_dir, 'last.pth'),
-        os.path.join('/content/drive/MyDrive', ckpt_dir, 'best.pth'),
-        os.path.join('/content/drive/MyDrive', ckpt_dir, 'last.pth'),
-        os.path.join('results/checkpoints', os.path.basename(ckpt_dir), 'best.pth'),
+    if os.path.isfile(ckpt_dir):
+        return ckpt_dir
+
+    base_name = os.path.basename(os.path.normpath(ckpt_dir))
+    candidate_dirs = [
+        ckpt_dir,
+        os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', ckpt_dir),
+        os.path.join('/content/drive/MyDrive', ckpt_dir),
+        os.path.join('results/checkpoints', base_name),
     ]
-    for p in candidates:
-        if os.path.isfile(p):
-            return p
+
+    # Also check local Downloads folder if running on local machine
+    downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+    if os.path.isdir(downloads_dir):
+        for p in glob.glob(os.path.join(downloads_dir, '*results*', 'results', 'checkpoints', base_name)):
+            if os.path.isdir(p):
+                candidate_dirs.append(p)
+        for p in glob.glob(os.path.join(downloads_dir, 'results', 'checkpoints', base_name)):
+            if os.path.isdir(p):
+                candidate_dirs.append(p)
+
+    for d in candidate_dirs:
+        if not os.path.isdir(d):
+            continue
+
+        # 1. Look for any best*.pth (best.pth, best_7292.pth, best_0.8420.pth, best_dice.pth, etc.)
+        bests = glob.glob(os.path.join(d, 'best*.pth'))
+        if bests:
+            def sort_key(path):
+                m = re.search(r'best[_-]?([0-9]*\.?[0-9]+)', os.path.basename(path))
+                val = float(m.group(1)) if m else 0.0
+                return (val, os.path.getmtime(path))
+
+            bests.sort(key=sort_key, reverse=True)
+            return bests[0]
+
+        # 2. Look for any other .pth except last*.pth
+        other_pths = [f for f in glob.glob(os.path.join(d, '*.pth')) if not os.path.basename(f).startswith('last')]
+        if other_pths:
+            other_pths.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+            return other_pths[0]
+
+        # 3. Fallback to last.pth
+        last_pth = os.path.join(d, 'last.pth')
+        if os.path.isfile(last_pth):
+            return last_pth
+
     return None
 
 
