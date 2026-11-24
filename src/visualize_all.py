@@ -10,11 +10,116 @@ import glob
 import pandas as pd
 from PIL import Image
 import numpy as np
+import torch
 
 from src.visualize import (
     plot_training_curves,
     plot_width_histogram,
+    plot_roc_pr_curves,
+    multi_model_grid,
 )
+from src.evaluate import load_config, load_checkpoint, evaluate_model
+from src.datasets import load_split, get_dataloader
+
+
+def generate_qualitative_comparisons():
+    """Evaluate all available trained checkpoints on the test set and plot multi-model visual comparisons."""
+    models_info = [
+        ('configs/baseline.yaml',    'Baseline U-Net (M1)'),
+        ('configs/hybrid.yaml',      'Hybrid U-Net (M2)'),
+        ('configs/hybrid_i2.yaml',   'Hybrid Mamba+I2 (Proposed)'),
+    ]
+
+    available_models = []
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    for cfg_path, label in models_info:
+        if os.path.exists(cfg_path):
+            cfg = load_config(cfg_path)
+            ckpt_path = os.path.join(cfg.get('checkpoint_dir', ''), 'best.pth')
+            if os.path.exists(ckpt_path):
+                available_models.append((cfg, label))
+
+    if not available_models:
+        print("[Viz] No checkpoints found yet under results/checkpoints/. Skipping image comparison grids.")
+        return
+
+    cfg0 = available_models[0][0]
+    data_root = cfg0['data_root']
+    split_file = cfg0['split_file']
+
+    if not os.path.exists(split_file) or not os.path.exists(data_root):
+        print(f"[Viz] Dataset or split file missing at {data_root}. Skipping qualitative grids.")
+        return
+
+    loader = get_dataloader(data_root, split_file, split='test', batch_size=1, num_workers=2)
+
+    model_preds_dict = {}
+    model_probs_dict = {}
+    model_metrics_dict = {}
+    raw_images = []
+    raw_gts = []
+    image_ids = []
+
+    for cfg, label in available_models:
+        print(f"[Viz] Generating predictions for {label}...")
+        try:
+            model = load_checkpoint(cfg, device)
+            per_img, probs, preds, gts, ids = evaluate_model(model, loader, device, cfg)
+            model_preds_dict[label] = preds
+            model_probs_dict[label] = probs
+            model_metrics_dict[label] = per_img
+
+            if not raw_images:
+                for img_id in ids:
+                    p = os.path.join(data_root, 'images', f'{img_id}.pgm')
+                    if os.path.exists(p):
+                        img_np = np.array(Image.open(p).convert('L'), dtype=np.float32) / 255.0
+                    else:
+                        img_np = np.zeros((300, 300), dtype=np.float32)
+                    raw_images.append(img_np)
+                raw_gts = gts
+                image_ids = ids
+        except Exception as e:
+            print(f"[Viz] Could not evaluate {label}: {e}")
+
+    if not model_preds_dict or not raw_images:
+        return
+
+    # 1. Multi-model grid for best/representative test samples
+    multi_model_grid(
+        images=raw_images,
+        gts=raw_gts,
+        model_preds_dict=model_preds_dict,
+        ids=image_ids,
+        out_path='results/figures/multi_model_comparison.png',
+        n_show=min(6, len(raw_images)),
+        model_metrics_dict=model_metrics_dict
+    )
+
+    # 2. Individual test sample comparison images
+    out_cases_dir = 'results/figures/qualitative'
+    os.makedirs(out_cases_dir, exist_ok=True)
+    for i in range(min(10, len(raw_images))):
+        case_id = image_ids[i]
+        single_preds = {lbl: [model_preds_dict[lbl][i]] for lbl in model_preds_dict}
+        single_metrics = {lbl: [model_metrics_dict[lbl][i]] for lbl in model_metrics_dict}
+        multi_model_grid(
+            images=[raw_images[i]],
+            gts=[raw_gts[i]],
+            model_preds_dict=single_preds,
+            ids=[case_id],
+            out_path=os.path.join(out_cases_dir, f'case_{case_id}.png'),
+            n_show=1,
+            model_metrics_dict=single_metrics
+        )
+    print(f"[Viz] Saved individual qualitative sample comparisons in {out_cases_dir}/")
+
+    # 3. Combined ROC and PR curves
+    if len(model_probs_dict) >= 1:
+        prob_list = [model_probs_dict[lbl] for lbl in model_probs_dict]
+        lbl_list = list(model_probs_dict.keys())
+        plot_roc_pr_curves(prob_list, raw_gts, lbl_list, out_path='results/figures/roc_pr.png')
 
 
 def main():
@@ -59,6 +164,10 @@ def main():
         if widths_list:
             plot_width_histogram([widths_list], ['DCA1 Train GT'], thin_threshold=3,
                                  out_path='results/figures/width_histogram.png')
+
+    # 3. Qualitative multi-model comparison grids on test set
+    print("[Viz] Generating multi-model prediction comparisons...")
+    generate_qualitative_comparisons()
 
     print("[Viz] Visualizations check complete.")
 

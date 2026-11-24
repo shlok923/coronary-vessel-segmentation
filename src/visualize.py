@@ -33,6 +33,72 @@ def error_map(pred, gt):
     return rgb
 
 
+def multi_model_grid(images, gts, model_preds_dict, ids,
+                     out_path='results/figures/multi_model_comparison.png',
+                     n_show=6, model_metrics_dict=None):
+    """
+    Plot a multi-model comparison grid:
+      [Raw Image | Ground Truth | Model 1 | Model 2 | Model 3 | Error Map (Best Model)]
+    """
+    n = min(n_show, len(images))
+    if n == 0:
+        return
+    model_names = list(model_preds_dict.keys())
+    num_models = len(model_names)
+    n_cols = 2 + num_models + (1 if num_models > 0 else 0)
+
+    fig, axes = plt.subplots(n, n_cols, figsize=(3.3 * n_cols, 3.3 * n))
+    if n == 1:
+        axes = axes[np.newaxis, :]
+
+    last_model_name = model_names[-1] if num_models > 0 else 'Pred'
+    col_titles = ['Raw Angiogram', 'Ground Truth'] + model_names
+    if num_models > 0:
+        col_titles.append(f'Error Map ({last_model_name})')
+
+    for j, t in enumerate(col_titles):
+        axes[0, j].set_title(t, fontsize=11, fontweight='bold', pad=8)
+
+    for i in range(n):
+        axes[i, 0].imshow(images[i], cmap='gray')
+        axes[i, 0].set_ylabel(f"Sample #{ids[i]}", fontsize=9, fontweight='bold')
+        axes[i, 1].imshow(gts[i], cmap='gray')
+
+        for m_idx, m_name in enumerate(model_names):
+            pred = model_preds_dict[m_name][i]
+            col_idx = 2 + m_idx
+            axes[i, col_idx].imshow(pred, cmap='gray')
+
+            if model_metrics_dict and m_name in model_metrics_dict:
+                m_info = model_metrics_dict[m_name][i]
+                d = m_info.get('dice')
+                cd = m_info.get('cldice')
+                if d is not None and cd is not None:
+                    axes[i, col_idx].set_xlabel(f"Dice: {d:.3f} | clDice: {cd:.3f}", fontsize=8)
+                elif d is not None:
+                    axes[i, col_idx].set_xlabel(f"Dice: {d:.3f}", fontsize=8)
+
+        if num_models > 0:
+            best_pred = model_preds_dict[last_model_name][i]
+            axes[i, -1].imshow(error_map(best_pred, gts[i]))
+
+        for j in range(n_cols):
+            axes[i, j].set_xticks([])
+            axes[i, j].set_yticks([])
+
+    patches = [
+        mpatches.Patch(color=[0, 200/255, 0], label='TP (True Vessel)'),
+        mpatches.Patch(color=[200/255, 0, 0], label='FP (False Vessel)'),
+        mpatches.Patch(color=[0, 0, 200/255], label='FN (Missed/Broken)'),
+    ]
+    fig.legend(handles=patches, loc='lower center', ncol=3, fontsize=10, bbox_to_anchor=(0.5, -0.01))
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"[Viz] Saved multi-model comparison grid: {out_path}")
+
+
 def qualitative_grid(images, gts, preds_m1, preds_m2, ids,
                       sort_by_dice=True, n_show=6, out_path='results/figures/qualitative.png',
                       dice_scores_m1=None, dice_scores_m2=None):
