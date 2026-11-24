@@ -54,6 +54,7 @@ def find_checkpoint(config_or_dir):
     if os.path.isfile(ckpt_dir):
         return ckpt_dir
 
+
     base_name = os.path.basename(os.path.normpath(ckpt_dir))
     candidate_dirs = [
         ckpt_dir,
