@@ -18,8 +18,21 @@ from src.visualize import (
     plot_roc_pr_curves,
     multi_model_grid,
 )
-from src.evaluate import load_config, load_checkpoint, evaluate_model
+from src.evaluate import load_config, load_checkpoint, evaluate_model, find_checkpoint
 from src.datasets import load_split, get_dataloader
+
+
+def find_file(relative_path):
+    """Search for a file locally or under mounted Google Drive project paths."""
+    candidates = [
+        relative_path,
+        os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', relative_path),
+        os.path.join('/content/drive/MyDrive', relative_path),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
 
 
 def generate_qualitative_comparisons():
@@ -36,17 +49,29 @@ def generate_qualitative_comparisons():
     for cfg_path, label in models_info:
         if os.path.exists(cfg_path):
             cfg = load_config(cfg_path)
-            ckpt_path = os.path.join(cfg.get('checkpoint_dir', ''), 'best.pth')
-            if os.path.exists(ckpt_path):
+            ckpt_path = find_checkpoint(cfg)
+            if ckpt_path is not None:
                 available_models.append((cfg, label))
 
     if not available_models:
-        print("[Viz] No checkpoints found yet under results/checkpoints/. Skipping image comparison grids.")
+        print("[Viz] No checkpoints found yet under results/checkpoints/ or Google Drive. Skipping image comparison grids.")
         return
 
     cfg0 = available_models[0][0]
     data_root = cfg0['data_root']
     split_file = cfg0['split_file']
+
+    if not os.path.exists(data_root):
+        drive_candidates = [
+            '/content/drive/MyDrive/coronary-vessel-segmentation/data/DCA1',
+            '/content/drive/MyDrive/DCA1_data',
+            '/content/drive/MyDrive/Database_134_Angiograms',
+            '/content/drive/MyDrive/DCA1',
+        ]
+        for dc in drive_candidates:
+            if os.path.exists(dc):
+                data_root = dc
+                break
 
     if not os.path.exists(split_file) or not os.path.exists(data_root):
         print(f"[Viz] Dataset or split file missing at {data_root}. Skipping qualitative grids.")
@@ -131,17 +156,22 @@ def main():
         ('results/runs/hybrid_unet/metrics.csv',   'Hybrid U-Net (M2)'),
         ('results/runs/hybrid_unet_i2/metrics.csv','Hybrid U-Net + I2 (Proposed)'),
     ]
-    csv_paths = [p for p, _ in experiments if os.path.exists(p)]
-    labels    = [lbl for p, lbl in experiments if os.path.exists(p)]
+    csv_paths = []
+    labels    = []
+    for rel_path, lbl in experiments:
+        found = find_file(rel_path)
+        if found:
+            csv_paths.append(found)
+            labels.append(lbl)
 
     if csv_paths:
         plot_training_curves(csv_paths, labels, out_path='results/figures/training_curves.png')
     else:
-        print("[Viz] No metrics.csv found yet under results/runs/.")
+        print("[Viz] No metrics.csv found yet under results/runs/ or Google Drive.")
 
     # 2. Vessel width histogram from training GT
     split_file = 'splits/split.json'
-    mask_dir = 'data/DCA1/masks'
+    mask_dir = find_file('data/DCA1/masks') or 'data/DCA1/masks'
     if os.path.exists(split_file) and os.path.exists(mask_dir):
         import json
         from scipy.ndimage import distance_transform_edt

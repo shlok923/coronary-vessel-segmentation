@@ -40,9 +40,40 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
+def find_checkpoint(config_or_dir):
+    """
+    Search for checkpoint file across local workspace, Google Drive, and fallback paths.
+    Returns the resolved path if found, or None.
+    """
+    if isinstance(config_or_dir, dict):
+        ckpt_dir = config_or_dir.get('checkpoint_dir', '')
+    else:
+        ckpt_dir = str(config_or_dir)
+
+    candidates = [
+        os.path.join(ckpt_dir, 'best.pth'),
+        os.path.join(ckpt_dir, 'last.pth'),
+        os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', ckpt_dir, 'best.pth'),
+        os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', ckpt_dir, 'last.pth'),
+        os.path.join('/content/drive/MyDrive', ckpt_dir, 'best.pth'),
+        os.path.join('/content/drive/MyDrive', ckpt_dir, 'last.pth'),
+        os.path.join('results/checkpoints', os.path.basename(ckpt_dir), 'best.pth'),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def load_checkpoint(config, device):
-    ckpt_dir = config['checkpoint_dir']
-    ckpt_path = os.path.join(ckpt_dir, 'best.pth')
+    ckpt_path = find_checkpoint(config)
+    if not ckpt_path:
+        ckpt_dir = config.get('checkpoint_dir', '')
+        drive_path = os.path.join('/content/drive/MyDrive/coronary-vessel-segmentation', ckpt_dir, 'best.pth')
+        raise FileNotFoundError(
+            f"Checkpoint not found at '{os.path.join(ckpt_dir, 'best.pth')}' or in Drive at '{drive_path}'.\n"
+            f"Please ensure checkpoints exist under results/checkpoints/ or in Google Drive."
+        )
     ckpt = torch.load(ckpt_path, map_location=device)
     model = build_model(config).to(device)
     model.load_state_dict(ckpt['model_state_dict'])
